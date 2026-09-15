@@ -8,7 +8,7 @@ DocVoice is a lightweight, low-latency web application designed to analyze text-
 
 * **Sub-2s Response Latency:** Optimized inference pipeline utilizing `gemini-3.1-flash-lite` with zero thinking overhead (`thinkingBudget: 0`) and strict JSON output schemas.
 * **Voice-In & Voice-Out (VIVO):** Hands-free speech recognition and multi-language text-to-speech (TTS) powered by the Web Speech API.
-* **Multilingual Routing:** Dynamic voice and accent selection based on model-detected language codes (`uk-UA`, `en-US`, `ru-RU`), eliminating pronunciation artifacts across Cyrillic and Latin alphabets.
+* **Multilingual Routing:** Dynamic voice and accent selection based on model-detected language codes, eliminating pronunciation artifacts across Cyrillic and Latin alphabets.
 * **Grounded Citations:** Every answer returns a verbatim text quote along with the exact source page number to eliminate hallucinations.
 * **Client-Side Document Ingestion:** Direct text extraction in the browser via PDF.js with real-time indexing metrics.
 * **Zero-Setup Deployment:** Pure client-side architecture requiring no backend server; runs directly via GitHub Pages or static hosting over HTTPS.
