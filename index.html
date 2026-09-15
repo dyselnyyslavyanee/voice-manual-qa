@@ -60,19 +60,20 @@
     <section class="md:col-span-5 space-y-4">
       <div class="bg-slate-900/70 border border-slate-800 rounded-xl p-4">
         <h2 class="text-sm font-semibold text-slate-300 mb-2 flex items-center justify-between">
-          <span>Manual Document</span>
+          <span>Manual Documents</span>
           <span id="docStatusBadge" class="text-xs font-normal text-amber-400 bg-amber-950/60 border border-amber-800 px-2 py-0.5 rounded-full">No PDF</span>
         </h2>
         
-        <input type="file" id="pdfFileInput" accept="application/pdf" class="hidden" />
+        <!-- Multiple PDF support -->
+        <input type="file" id="pdfFileInput" accept="application/pdf" multiple class="hidden" />
         <div id="dropZone" class="border-2 border-dashed border-slate-700 hover:border-emerald-500/50 rounded-lg p-5 block text-center cursor-pointer transition bg-slate-950/40">
           <svg class="w-8 h-8 mx-auto text-slate-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
           </svg>
-          <span class="text-xs text-slate-300 block font-medium">Click or drag & drop PDF here</span>
-          <span class="text-[11px] text-slate-500 block mt-1">Up to 10 pages text-based PDF</span>
+          <span class="text-xs text-slate-300 block font-medium">Click or drag & drop 1 or 2 PDFs</span>
+          <span class="text-[11px] text-slate-500 block mt-1">Up to 2 files, max 10 pages total</span>
         </div>
-        <p id="docFileName" class="text-xs text-emerald-400 mt-2 truncate font-mono hidden"></p>
+        <div id="docFileList" class="text-xs text-emerald-400 mt-2 space-y-1 font-mono hidden"></div>
       </div>
 
       <div class="bg-slate-900/50 border border-slate-800 rounded-xl p-4 text-xs space-y-2">
@@ -110,7 +111,7 @@
           <input 
             type="text" 
             id="textInput" 
-            placeholder="Type your question (English, Ukrainian, Russian)..." 
+            placeholder="Type your question..." 
             class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-emerald-500"
           />
           <button id="sendTextBtn" type="button" class="bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 px-4 py-2 rounded-lg border border-slate-600 cursor-pointer">
@@ -121,7 +122,7 @@
 
       <div class="flex-1 space-y-3" id="chatContainer">
         <div class="text-center py-10 text-slate-600 text-xs" id="emptyNotice">
-          Upload a PDF manual and ask a question to see citations and answers.
+          Upload 1 or 2 PDF manuals and ask questions by voice or text.
         </div>
       </div>
     </section>
@@ -144,7 +145,7 @@
       const pdfFileInput = document.getElementById('pdfFileInput');
       const dropZone = document.getElementById('dropZone');
       const docStatusBadge = document.getElementById('docStatusBadge');
-      const docFileName = document.getElementById('docFileName');
+      const docFileList = document.getElementById('docFileList');
       const ingestionTimeVal = document.getElementById('ingestionTimeVal');
       const latencyTimeVal = document.getElementById('latencyTimeVal');
       const micBtn = document.getElementById('micBtn');
@@ -183,7 +184,6 @@
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
       }
 
-      // Safe trigger for file selector
       dropZone.addEventListener('click', () => {
         pdfFileInput.click();
       });
@@ -205,50 +205,73 @@
       });
 
       dropZone.addEventListener('drop', (e) => {
-        const dt = e.dataTransfer;
-        const file = dt.files[0];
-        if (file && file.type === 'application/pdf') {
-          processPdfFile(file);
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.remove('drag-over');
+        const files = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf');
+        if (files.length > 0) {
+          processPdfFiles(files.slice(0, 2));
         } else {
-          alert('Please drop a valid PDF file.');
+          alert('Please drop valid PDF file(s).');
         }
       });
 
       pdfFileInput.addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (file) processPdfFile(file);
+        const files = Array.from(e.target.files).filter(f => f.type === 'application/pdf');
+        if (files.length > 0) {
+          processPdfFiles(files.slice(0, 2));
+        }
       });
 
-      async function processPdfFile(file) {
+      // Parsing up to 2 PDFs with a 10-page total cap
+      async function processPdfFiles(files) {
         const startTime = performance.now();
         docStatusBadge.textContent = 'Parsing...';
         docStatusBadge.className = 'text-xs text-cyan-400 bg-cyan-950/60 border border-cyan-800 px-2 py-0.5 rounded-full';
 
         try {
-          const arrayBuffer = await file.arrayBuffer();
-          const typedarray = new Uint8Array(arrayBuffer);
-          const pdf = await pdfjsLib.getDocument(typedarray).promise;
-          
           pdfPages = [];
-          const maxPages = Math.min(pdf.numPages, 10);
+          let totalPagesProcessed = 0;
+          const MAX_TOTAL_PAGES = 10;
+          const loadedFileNames = [];
 
-          for (let i = 1; i <= maxPages; i++) {
-            const page = await pdf.getPage(i);
-            const textContent = await page.getTextContent();
-            const pageText = textContent.items.map(item => item.str).join(' ');
-            pdfPages.push({ pageNumber: i, text: pageText });
+          for (let fileIdx = 0; fileIdx < files.length; fileIdx++) {
+            const file = files[fileIdx];
+            loadedFileNames.push(file.name);
+            const arrayBuffer = await file.arrayBuffer();
+            const typedarray = new Uint8Array(arrayBuffer);
+            const pdf = await pdfjsLib.getDocument(typedarray).promise;
+
+            const remainingQuota = MAX_TOTAL_PAGES - totalPagesProcessed;
+            const pagesToRead = Math.min(pdf.numPages, remainingQuota);
+
+            for (let i = 1; i <= pagesToRead; i++) {
+              const page = await pdf.getPage(i);
+              const textContent = await page.getTextContent();
+              const pageText = textContent.items.map(item => item.str).join(' ');
+              pdfPages.push({
+                docName: file.name,
+                docIndex: fileIdx + 1,
+                pageNumber: i,
+                text: pageText
+              });
+              totalPagesProcessed++;
+            }
+
+            if (totalPagesProcessed >= MAX_TOTAL_PAGES) break;
           }
 
           const elapsed = Math.round(performance.now() - startTime);
-          ingestionTimeVal.textContent = `${elapsed} ms (${pdfPages.length} pages)`;
-          docStatusBadge.textContent = 'Ready';
+          ingestionTimeVal.textContent = `${elapsed} ms (${pdfPages.length} pages total)`;
+          docStatusBadge.textContent = `${files.length} PDF Ready`;
           docStatusBadge.className = 'text-xs text-emerald-400 bg-emerald-950/60 border border-emerald-800 px-2 py-0.5 rounded-full';
-          docFileName.textContent = `Active: ${file.name}`;
-          docFileName.classList.remove('hidden');
+
+          docFileList.innerHTML = loadedFileNames.map((n, i) => `<div>Doc ${i + 1}: ${n}</div>`).join('');
+          docFileList.classList.remove('hidden');
           conversationHistory = [];
         } catch (err) {
           console.error('PDF error:', err);
-          alert('Could not parse PDF. Ensure it is a standard text PDF.');
+          alert('Could not parse PDF. Ensure it contains selectable text.');
           docStatusBadge.textContent = 'Error';
         }
       }
@@ -331,20 +354,27 @@
         queryStartTime = performance.now();
         micStatus.textContent = 'Reasoning with Flash-Lite...';
 
-        const docContext = pdfPages.map(p => `[PAGE ${p.pageNumber}]\n${p.text}`).join('\n\n');
-        
-        const prompt = `Answer STRICTLY based on the document.
-If user asks for multiple languages, return a JSON array of objects. If single language, return an array with one object.
-Each object MUST have:
-- spoken_answer: concise natural text in that specific language
-- quote: exact verbatim quote from document
-- page: integer page number
-- lang: BCP-47 language tag (e.g. "uk-UA", "en-US", "ru-RU") matching that answer
+        const docContext = pdfPages.map(p => `[DOC ${p.docIndex}: "${p.docName}", PAGE ${p.pageNumber}]\n${p.text}`).join('\n\n');
 
-DOCUMENT:
+        const historyContext = conversationHistory.slice(-2).map(h => `User: ${h.q}\nAssistant: ${h.a}`).join('\n');
+
+        const prompt = `You are a factual equipment manual assistant. Answer STRICTLY based on the uploaded documents.
+If information is missing, explicitly state: "The document does not contain this information." and leave quote empty and page as 0.
+Support follow-ups using previous conversation.
+
+Return ONLY a JSON object (or JSON array) with:
+- spoken_answer: concise direct answer to be spoken aloud
+- quote: exact verbatim sentence from the manual supporting the answer
+- page: integer page number (or string like "Doc 1, P. 2")
+- lang: BCP-47 language tag (e.g. "ru-RU", "en-US", "uk-UA")
+
+CONVERSATION HISTORY:
+${historyContext || 'None'}
+
+UPLOADED MANUALS:
 ${docContext}
 
-QUESTION: ${question}`;
+USER QUESTION: ${question}`;
 
         const targetModel = 'gemini-3.1-flash-lite';
 
@@ -379,7 +409,7 @@ QUESTION: ${question}`;
             const resObj = JSON.parse(raw);
             parsed = Array.isArray(resObj) ? resObj : [resObj];
           } catch (jsonErr) {
-            parsed = [{ spoken_answer: raw, quote: '', page: 0, lang: 'uk-UA' }];
+            parsed = [{ spoken_answer: raw, quote: '', page: 0, lang: 'ru-RU' }];
           }
 
           const latency = Math.round(performance.now() - queryStartTime);
@@ -411,7 +441,7 @@ QUESTION: ${question}`;
           if (!text) return;
 
           const u = new SpeechSynthesisUtterance(text);
-          const lang = item.lang || 'uk-UA';
+          const lang = item.lang || 'ru-RU';
           u.lang = lang;
 
           const prefix = lang.split('-')[0].toLowerCase();
@@ -432,7 +462,7 @@ QUESTION: ${question}`;
         
         let answersHtml = items.map(item => {
           const langBadge = item.lang ? `<span class="bg-slate-800 text-slate-300 text-[10px] font-mono px-1.5 py-0.5 rounded uppercase">${item.lang}</span>` : '';
-          const pageBadge = item.page ? `<span class="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] px-1.5 py-0.5 rounded font-mono">P. ${item.page}</span>` : '';
+          const pageBadge = item.page && item.page !== 0 ? `<span class="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] px-1.5 py-0.5 rounded font-mono">P. ${item.page}</span>` : '';
           
           return `
             <div class="border-t border-slate-800/80 pt-2.5 first:border-0 first:pt-0 space-y-1.5">
