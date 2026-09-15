@@ -22,7 +22,7 @@ DocVoice is a lightweight, low-latency web application designed to analyze text-
 
 ## Quick Start
 
-1. Open the [Live Demo](https://<your-username>.github.io/voice-manual-qa/).
+1. Open the [Live Demo](https://<dyselnyyslavyanee>.github.io/voice-manual-qa/).
 2. Enter your Gemini API Key in the top bar.
 3. Drag & drop any text-based PDF document (up to 10 pages).
 4. Click the microphone button or type your question to receive spoken, cited responses.
