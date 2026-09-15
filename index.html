@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Voice Manual Q&A — AI Assistant</title>
+  <title>DocVoice — Multilingual Voice Assistant for PDF Manuals</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
   <style>
@@ -35,10 +35,10 @@
         <input 
           type="password" 
           id="apiKeyInput" 
-          value="" placeholder="Enter your Gemini API key..."
+          placeholder="Enter your Gemini API key..."
           class="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-200 focus:outline-none focus:border-emerald-500 w-48 md:w-60"
         />
-        <button id="saveKeyBtn" class="bg-slate-800 hover:bg-slate-700 border border-slate-600 px-2.5 py-1 rounded text-slate-300">Saved</button>
+        <button id="saveKeyBtn" class="bg-slate-800 hover:bg-slate-700 border border-slate-600 px-2.5 py-1 rounded text-slate-300">Save</button>
       </div>
     </div>
   </header>
@@ -53,7 +53,7 @@
         
         <label id="dropZone" class="border-2 border-dashed border-slate-700 hover:border-emerald-500/50 rounded-lg p-5 block text-center cursor-pointer transition bg-slate-950/40">
           <input type="file" id="pdfFileInput" accept="application/pdf" class="hidden" />
-          <svg class="w-8 h-8 mx-auto text-slate-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg class="w-8 h-8 mx-auto text-slate-500 mb-2" fill="none" stroke="currentColor" viewBox="24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
           </svg>
           <span class="text-xs text-slate-300 block font-medium">Click or drag & drop PDF here</span>
@@ -150,16 +150,19 @@
       pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
     }
 
+    // Comprehensive Cross-browser Voice Init (Chrome, Edge, Safari)
     let availableVoices = [];
-    function loadVoices() {
-      availableVoices = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
+    function initVoices() {
+      if ('speechSynthesis' in window) {
+        availableVoices = window.speechSynthesis.getVoices();
+      }
     }
-    loadVoices();
-    if (typeof speechSynthesis !== 'undefined' && speechSynthesis.onvoiceschanged !== undefined) {
-      speechSynthesis.onvoiceschanged = loadVoices;
+    initVoices();
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.onvoiceschanged = initVoices;
     }
 
-    // Drag and Drop Handlers
+    // Drag and Drop
     ['dragenter', 'dragover'].forEach(eventName => {
       dropZone.addEventListener(eventName, (e) => {
         e.preventDefault();
@@ -289,7 +292,7 @@
     async function handleUserQuery(question) {
       const key = apiKeyInput.value.trim();
       if (!key) {
-        alert('Please enter your Gemini API Key');
+        alert('Please enter your Gemini API Key in the top field.');
         return;
       }
       if (pdfPages.length === 0) {
@@ -304,12 +307,12 @@
       const docContext = pdfPages.map(p => `[PAGE ${p.pageNumber}]\n${p.text}`).join('\n\n');
       
       const prompt = `Answer STRICTLY based on the document.
-If the user asks for multiple languages, return a JSON array of objects. If single language, return an array with one object.
+If user asks for multiple languages, return a JSON array of objects. If single language, return an array with one object.
 Each object MUST have:
 - spoken_answer: text in that specific language
 - quote: exact verbatim quote from document
 - page: integer page number
-- lang: BCP-47 language tag (e.g. "uk-UA", "en-US", "ru-RU") corresponding strictly to that spoken_answer
+- lang: BCP-47 language tag (e.g. "uk-UA", "en-US", "ru-RU") matching that answer
 
 DOCUMENT:
 ${docContext}
@@ -367,7 +370,7 @@ QUESTION: ${question}`;
       }
     }
 
-    // Play speech queue sequentially with language-matched voices
+    // High-compatibility sequential speech player
     function speakQueue(items) {
       if (!('speechSynthesis' in window)) return;
       window.speechSynthesis.cancel();
@@ -376,26 +379,50 @@ QUESTION: ${question}`;
         availableVoices = window.speechSynthesis.getVoices();
       }
 
-      items.forEach((item, index) => {
-        const text = item.spoken_answer || '';
+      items.forEach((item) => {
+        const text = (item.spoken_answer || '').trim();
         if (!text) return;
 
-        const lang = item.lang || 'uk-UA';
+        const lang = item.lang || 'en-US';
         const u = new SpeechSynthesisUtterance(text);
         u.lang = lang;
 
         const prefix = lang.split('-')[0].toLowerCase();
-        const preferredVoice = availableVoices.find(v => 
-          v.lang.toLowerCase().startsWith(prefix) &&
-          (v.name.includes('Natural') || v.name.includes('Online') || v.name.includes('Neural') || v.name.includes('Polina') || v.name.includes('Ostap') || v.name.includes('Jenny') || v.name.includes('Guy'))
-        ) || availableVoices.find(v => v.lang.toLowerCase().startsWith(prefix));
 
-        if (preferredVoice) {
-          u.voice = preferredVoice;
+        // Target best available voice: Microsoft Natural for Edge, Google for Chrome
+        let chosenVoice = availableVoices.find(v => 
+          v.lang.toLowerCase().replace('_', '-').startsWith(prefix) &&
+          (v.name.includes('Natural') || v.name.includes('Online') || v.name.includes('Neural') || v.name.includes('Google') || v.name.includes('Polina') || v.name.includes('Ostap'))
+        );
+
+        if (!chosenVoice) {
+          chosenVoice = availableVoices.find(v => v.lang.toLowerCase().replace('_', '-').startsWith(prefix));
         }
 
-        u.rate = 1.05;
+        if (chosenVoice) {
+          u.voice = chosenVoice;
+        }
+
+        u.rate = 1.0;
         u.pitch = 1.0;
+
+        // Anti-freeze timer for Chrome speech synthesis
+        u.onstart = () => {
+          if (window._ttsResumeTimer) clearInterval(window._ttsResumeTimer);
+          window._ttsResumeTimer = setInterval(() => {
+            if (!window.speechSynthesis.speaking) {
+              clearInterval(window._ttsResumeTimer);
+            } else {
+              window.speechSynthesis.pause();
+              window.speechSynthesis.resume();
+            }
+          }, 10000);
+        };
+
+        u.onend = () => {
+          if (window._ttsResumeTimer) clearInterval(window._ttsResumeTimer);
+        };
+
         window.speechSynthesis.speak(u);
       });
     }
