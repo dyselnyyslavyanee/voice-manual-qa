@@ -32,7 +32,6 @@
       </div>
       
       <div class="flex items-center gap-3 text-xs">
-        <!-- Voice Toggle Button -->
         <button 
           id="ttsToggleBtn" 
           type="button"
@@ -136,6 +135,8 @@
     let queryStartTime = 0;
     let isTtsEnabled = true;
 
+    window._activeUtterance = null;
+
     const apiKeyInput = document.getElementById('apiKeyInput');
     const saveKeyBtn = document.getElementById('saveKeyBtn');
     const ttsToggleBtn = document.getElementById('ttsToggleBtn');
@@ -164,7 +165,6 @@
       alert('API Key saved!');
     });
 
-    // Mute/Unmute Toggle
     ttsToggleBtn.addEventListener('click', () => {
       isTtsEnabled = !isTtsEnabled;
       if (!isTtsEnabled) {
@@ -183,7 +183,6 @@
       pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
     }
 
-    // Voice Engine Cache
     let availableVoices = [];
     function fetchVoices() {
       if ('speechSynthesis' in window) {
@@ -196,7 +195,6 @@
       window.speechSynthesis.onvoiceschanged = fetchVoices;
     }
 
-    // Drag and Drop Handlers
     ['dragenter', 'dragover'].forEach(eventName => {
       dropZone.addEventListener(eventName, (e) => {
         e.preventDefault();
@@ -262,7 +260,6 @@
       }
     }
 
-    // Web Speech Recognition
     const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRec) {
       recognition = new SpeechRec();
@@ -407,12 +404,12 @@ QUESTION: ${question}`;
       }
     }
 
-    // Rock-solid Sequential TTS (Promises, no freeze)
     async function speakQueueReliable(items) {
       if (!('speechSynthesis' in window)) return;
       window.speechSynthesis.cancel();
+      
+      await new Promise(r => setTimeout(r, 100));
 
-      // Refresh voice list
       availableVoices = window.speechSynthesis.getVoices();
 
       for (const item of items) {
@@ -421,13 +418,13 @@ QUESTION: ${question}`;
         if (!text) continue;
 
         await new Promise((resolve) => {
-          const lang = item.lang || 'en-US';
+          const lang = item.lang || 'uk-UA';
           const u = new SpeechSynthesisUtterance(text);
           u.lang = lang;
+          window._activeUtterance = u;
 
           const prefix = lang.split('-')[0].toLowerCase();
 
-          // Pick best voice: Natural (Edge), Google (Chrome), or any regional fallback
           const chosenVoice = availableVoices.find(v => 
             v.lang.toLowerCase().replace('_', '-').startsWith(prefix) &&
             (v.name.includes('Natural') || v.name.includes('Online') || v.name.includes('Neural') || v.name.includes('Google') || v.name.includes('Polina') || v.name.includes('Ostap'))
@@ -437,18 +434,17 @@ QUESTION: ${question}`;
           u.rate = 1.0;
           u.pitch = 1.0;
 
-          u.onend = () => resolve();
-          u.onerror = (e) => {
-            console.warn('TTS item error:', e);
+          u.onend = () => {
+            window._activeUtterance = null;
             resolve();
           };
 
-          // Failsafe timeout in case browser hangs on utterance
-          const fallbackTimer = setTimeout(() => resolve(), 8000);
-          const origEnd = u.onend;
-          u.onend = () => {
-            clearTimeout(fallbackTimer);
-            origEnd();
+          u.onerror = (e) => {
+            if (e.error !== 'interrupted') {
+              console.warn('TTS playback issue:', e.error);
+            }
+            window._activeUtterance = null;
+            resolve();
           };
 
           window.speechSynthesis.speak(u);
