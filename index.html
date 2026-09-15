@@ -30,15 +30,29 @@
         <span class="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></span>
         <h1 class="font-bold text-lg tracking-tight">DocVoice <span class="text-xs font-mono text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded">3.1 Flash-Lite</span></h1>
       </div>
-      <div class="flex items-center gap-2 text-xs">
-        <label for="apiKeyInput" class="text-slate-400">Gemini Key:</label>
-        <input 
-          type="password" 
-          id="apiKeyInput" 
-          placeholder="Enter your Gemini API key..."
-          class="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-200 focus:outline-none focus:border-emerald-500 w-48 md:w-60"
-        />
-        <button id="saveKeyBtn" class="bg-slate-800 hover:bg-slate-700 border border-slate-600 px-2.5 py-1 rounded text-slate-300">Save</button>
+      
+      <div class="flex items-center gap-3 text-xs">
+        <!-- Voice Toggle Button -->
+        <button 
+          id="ttsToggleBtn" 
+          type="button"
+          class="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-emerald-400 px-2.5 py-1 rounded transition"
+          title="Toggle Voice Output"
+        >
+          <span id="ttsIcon">🔊</span>
+          <span id="ttsLabel" class="font-medium">Voice ON</span>
+        </button>
+
+        <div class="flex items-center gap-1.5">
+          <label for="apiKeyInput" class="text-slate-400">Key:</label>
+          <input 
+            type="password" 
+            id="apiKeyInput" 
+            placeholder="Gemini API key..."
+            class="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-200 focus:outline-none focus:border-emerald-500 w-36 md:w-52"
+          />
+          <button id="saveKeyBtn" class="bg-slate-800 hover:bg-slate-700 border border-slate-600 px-2 py-1 rounded text-slate-300">Save</button>
+        </div>
       </div>
     </div>
   </header>
@@ -53,7 +67,7 @@
         
         <label id="dropZone" class="border-2 border-dashed border-slate-700 hover:border-emerald-500/50 rounded-lg p-5 block text-center cursor-pointer transition bg-slate-950/40">
           <input type="file" id="pdfFileInput" accept="application/pdf" class="hidden" />
-          <svg class="w-8 h-8 mx-auto text-slate-500 mb-2" fill="none" stroke="currentColor" viewBox="24 24">
+          <svg class="w-8 h-8 mx-auto text-slate-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
           </svg>
           <span class="text-xs text-slate-300 block font-medium">Click or drag & drop PDF here</span>
@@ -97,7 +111,7 @@
           <input 
             type="text" 
             id="textInput" 
-            placeholder="Type your question (English, etc.)..." 
+            placeholder="Type your question (English, Ukrainian, Russian)..." 
             class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-emerald-500"
           />
           <button id="sendTextBtn" type="button" class="bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 px-4 py-2 rounded-lg border border-slate-600">
@@ -108,7 +122,7 @@
 
       <div class="flex-1 space-y-3" id="chatContainer">
         <div class="text-center py-10 text-slate-600 text-xs" id="emptyNotice">
-          Upload a PDF manual and ask a question to see citations and spoken output.
+          Upload a PDF manual and ask a question to see citations and answers.
         </div>
       </div>
     </section>
@@ -120,9 +134,13 @@
     let isRecording = false;
     let recognition = null;
     let queryStartTime = 0;
+    let isTtsEnabled = true;
 
     const apiKeyInput = document.getElementById('apiKeyInput');
     const saveKeyBtn = document.getElementById('saveKeyBtn');
+    const ttsToggleBtn = document.getElementById('ttsToggleBtn');
+    const ttsIcon = document.getElementById('ttsIcon');
+    const ttsLabel = document.getElementById('ttsLabel');
     const pdfFileInput = document.getElementById('pdfFileInput');
     const dropZone = document.getElementById('dropZone');
     const docStatusBadge = document.getElementById('docStatusBadge');
@@ -146,23 +164,39 @@
       alert('API Key saved!');
     });
 
+    // Mute/Unmute Toggle
+    ttsToggleBtn.addEventListener('click', () => {
+      isTtsEnabled = !isTtsEnabled;
+      if (!isTtsEnabled) {
+        if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+        ttsIcon.textContent = '🔇';
+        ttsLabel.textContent = 'Voice OFF';
+        ttsToggleBtn.className = 'flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-500 px-2.5 py-1 rounded transition';
+      } else {
+        ttsIcon.textContent = '🔊';
+        ttsLabel.textContent = 'Voice ON';
+        ttsToggleBtn.className = 'flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-emerald-400 px-2.5 py-1 rounded transition';
+      }
+    });
+
     if (window.pdfjsLib) {
       pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
     }
 
-    // Comprehensive Cross-browser Voice Init (Chrome, Edge, Safari)
+    // Voice Engine Cache
     let availableVoices = [];
-    function initVoices() {
+    function fetchVoices() {
       if ('speechSynthesis' in window) {
-        availableVoices = window.speechSynthesis.getVoices();
+        const v = window.speechSynthesis.getVoices();
+        if (v && v.length) availableVoices = v;
       }
     }
-    initVoices();
+    fetchVoices();
     if ('speechSynthesis' in window) {
-      window.speechSynthesis.onvoiceschanged = initVoices;
+      window.speechSynthesis.onvoiceschanged = fetchVoices;
     }
 
-    // Drag and Drop
+    // Drag and Drop Handlers
     ['dragenter', 'dragover'].forEach(eventName => {
       dropZone.addEventListener(eventName, (e) => {
         e.preventDefault();
@@ -309,7 +343,7 @@
       const prompt = `Answer STRICTLY based on the document.
 If user asks for multiple languages, return a JSON array of objects. If single language, return an array with one object.
 Each object MUST have:
-- spoken_answer: text in that specific language
+- spoken_answer: concise natural text in that specific language
 - quote: exact verbatim quote from document
 - page: integer page number
 - lang: BCP-47 language tag (e.g. "uk-UA", "en-US", "ru-RU") matching that answer
@@ -359,7 +393,10 @@ QUESTION: ${question}`;
         latencyTimeVal.textContent = `${latency} ms`;
 
         renderCardList(question, parsed, latency, targetModel);
-        speakQueue(parsed);
+
+        if (isTtsEnabled) {
+          speakQueueReliable(parsed);
+        }
 
         conversationHistory.push({ q: question, a: parsed.map(p => p.spoken_answer).join(' | ') });
         micStatus.textContent = 'Click mic and ask aloud';
@@ -370,61 +407,53 @@ QUESTION: ${question}`;
       }
     }
 
-    // High-compatibility sequential speech player
-    function speakQueue(items) {
+    // Rock-solid Sequential TTS (Promises, no freeze)
+    async function speakQueueReliable(items) {
       if (!('speechSynthesis' in window)) return;
       window.speechSynthesis.cancel();
 
-      if (!availableVoices.length) {
-        availableVoices = window.speechSynthesis.getVoices();
-      }
+      // Refresh voice list
+      availableVoices = window.speechSynthesis.getVoices();
 
-      items.forEach((item) => {
+      for (const item of items) {
+        if (!isTtsEnabled) break;
         const text = (item.spoken_answer || '').trim();
-        if (!text) return;
+        if (!text) continue;
 
-        const lang = item.lang || 'en-US';
-        const u = new SpeechSynthesisUtterance(text);
-        u.lang = lang;
+        await new Promise((resolve) => {
+          const lang = item.lang || 'en-US';
+          const u = new SpeechSynthesisUtterance(text);
+          u.lang = lang;
 
-        const prefix = lang.split('-')[0].toLowerCase();
+          const prefix = lang.split('-')[0].toLowerCase();
 
-        // Target best available voice: Microsoft Natural for Edge, Google for Chrome
-        let chosenVoice = availableVoices.find(v => 
-          v.lang.toLowerCase().replace('_', '-').startsWith(prefix) &&
-          (v.name.includes('Natural') || v.name.includes('Online') || v.name.includes('Neural') || v.name.includes('Google') || v.name.includes('Polina') || v.name.includes('Ostap'))
-        );
+          // Pick best voice: Natural (Edge), Google (Chrome), or any regional fallback
+          const chosenVoice = availableVoices.find(v => 
+            v.lang.toLowerCase().replace('_', '-').startsWith(prefix) &&
+            (v.name.includes('Natural') || v.name.includes('Online') || v.name.includes('Neural') || v.name.includes('Google') || v.name.includes('Polina') || v.name.includes('Ostap'))
+          ) || availableVoices.find(v => v.lang.toLowerCase().replace('_', '-').startsWith(prefix));
 
-        if (!chosenVoice) {
-          chosenVoice = availableVoices.find(v => v.lang.toLowerCase().replace('_', '-').startsWith(prefix));
-        }
+          if (chosenVoice) u.voice = chosenVoice;
+          u.rate = 1.0;
+          u.pitch = 1.0;
 
-        if (chosenVoice) {
-          u.voice = chosenVoice;
-        }
+          u.onend = () => resolve();
+          u.onerror = (e) => {
+            console.warn('TTS item error:', e);
+            resolve();
+          };
 
-        u.rate = 1.0;
-        u.pitch = 1.0;
+          // Failsafe timeout in case browser hangs on utterance
+          const fallbackTimer = setTimeout(() => resolve(), 8000);
+          const origEnd = u.onend;
+          u.onend = () => {
+            clearTimeout(fallbackTimer);
+            origEnd();
+          };
 
-        // Anti-freeze timer for Chrome speech synthesis
-        u.onstart = () => {
-          if (window._ttsResumeTimer) clearInterval(window._ttsResumeTimer);
-          window._ttsResumeTimer = setInterval(() => {
-            if (!window.speechSynthesis.speaking) {
-              clearInterval(window._ttsResumeTimer);
-            } else {
-              window.speechSynthesis.pause();
-              window.speechSynthesis.resume();
-            }
-          }, 10000);
-        };
-
-        u.onend = () => {
-          if (window._ttsResumeTimer) clearInterval(window._ttsResumeTimer);
-        };
-
-        window.speechSynthesis.speak(u);
-      });
+          window.speechSynthesis.speak(u);
+        });
+      }
     }
 
     function renderCardList(question, items, latency, modelName) {
@@ -459,6 +488,7 @@ QUESTION: ${question}`;
 
     clearChatBtn.addEventListener('click', () => {
       conversationHistory = [];
+      if ('speechSynthesis' in window) window.speechSynthesis.cancel();
       chatContainer.innerHTML = '<div class="text-center py-10 text-slate-600 text-xs">Cleared.</div>';
     });
   </script>
